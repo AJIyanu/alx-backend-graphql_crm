@@ -1,10 +1,14 @@
 import graphene
+import re
 from graphene_django import DjangoObjectType
 from .models import Customer, Product, Order
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from decimal import Decimal
-import re
+from graphene import relay
+from graphene_django.filter import DjangoFilterConnectionField
+from .filters import CustomerFilter, ProductFilter, OrderFilter
+
 
 
 # =========================
@@ -13,34 +17,79 @@ import re
 class CustomerType(DjangoObjectType):
     class Meta:
         model = Customer
-        fields = ("id", "name", "email", "phone")
+        interfaces = (relay.Node,)
+        filterset_class = CustomerFilter
+        fields = ("id", "name", "email", "phone", "created_at")
 
 
 class ProductType(DjangoObjectType):
     class Meta:
         model = Product
+        interfaces = (relay.Node,)
+        filterset_class = ProductFilter
         fields = ("id", "name", "price", "stock")
 
 
 class OrderType(DjangoObjectType):
     class Meta:
         model = Order
+        interfaces = (relay.Node,)
+        filterset_class = OrderFilter
         fields = ("id", "customer", "products", "order_date", "total_amount")
 
 # --- QUERIES ---
+
+class CustomerFilterInput(graphene.InputObjectType):
+    name_icontains = graphene.String()
+    email_icontains = graphene.String()
+    created_at_gte = graphene.Date()
+    created_at_lte = graphene.Date()
+    phone_pattern = graphene.String()
+
+class CustomFilterConnectionField(DjangoFilterConnectionField):
+    @classmethod
+    def resolve_queryset(cls, connection, iterable, info, args, filtering_args, filterset_class):
+        # Pop the filter input if provided
+        filter_input = args.pop("filter", None)
+        if filter_input:
+            # Flatten filter dict into args (so django-filter can understand)
+            for key, value in filter_input.items():
+                args[key] = value
+        return super().resolve_queryset(connection, iterable, info, args, filtering_args, filterset_class)
+    
 class Query(graphene.ObjectType):
-    all_customers = graphene.List(CustomerType)
-    all_products = graphene.List(ProductType)
-    all_orders = graphene.List(OrderType)
+    all_customers = CustomFilterConnectionField(
+        CustomerType,
+        filter=CustomerFilterInput(),
+        order_by=graphene.List(of_type=graphene.String)
+    )
+    all_products = DjangoFilterConnectionField(
+        ProductType,
+        order_by=graphene.List(of_type=graphene.String)
+    )
+    all_orders = DjangoFilterConnectionField(
+        OrderType,
+        order_by=graphene.List(of_type=graphene.String)
+    )
 
-    def resolve_all_customers(root, info):
-        return Customer.objects.all()
+    # --- Resolvers for ordering ---
+    def resolve_all_customers(root, info, order_by=None, **kwargs):
+        qs = Customer.objects.all()
+        if order_by:
+            qs = qs.order_by(*order_by)
+        return qs
 
-    def resolve_all_products(root, info):
-        return Product.objects.all()
+    def resolve_all_products(root, info, order_by=None, **kwargs):
+        qs = Product.objects.all()
+        if order_by:
+            qs = qs.order_by(*order_by)
+        return qs
 
-    def resolve_all_orders(root, info):
-        return Order.objects.all()
+    def resolve_all_orders(root, info, order_by=None, **kwargs):
+        qs = Order.objects.all()
+        if order_by:
+            qs = qs.order_by(*order_by)
+        return qs
 
 
 # =========================
