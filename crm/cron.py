@@ -1,5 +1,5 @@
 from datetime import datetime
-import os
+from gql.transport.requests import RequestsHTTPTransport
 
 def log_crm_heartbeat():
     """
@@ -17,10 +17,9 @@ def log_crm_heartbeat():
     graphql_status = ""
     try:
         from gql import gql, Client
-        from gql.transport.aiohttp import AIOHTTPTransport
         
         # Set up GraphQL client
-        transport = AIOHTTPTransport(url="http://localhost:8000/graphql")
+        transport = RequestsHTTPTransport(url="http://localhost:8000/graphql")
         client = Client(transport=transport, fetch_schema_from_transport=True)
         
         # Simple hello query
